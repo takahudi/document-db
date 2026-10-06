@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.data/
+.work/
+todo.md
+decisions.tsv
+test-results/
+verification-artifacts/
+*.tsbuildinfo
