@@ -13,7 +13,7 @@ body {
 	margin:0
 }
 
-button,input,select {
+button,input,select,textarea {
 	font:inherit
 }
 
@@ -27,7 +27,7 @@ button:disabled {
 	cursor:not-allowed
 }
 
-button:focus-visible,input:focus-visible,select:focus-visible {
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible {
 	outline:3px solid #8ec4ad;
 	outline-offset:3px
 }
@@ -543,6 +543,104 @@ button {
 
 .inline-error {
 	color:#986445
+}
+
+.diagram-figure {
+	margin:24px 0;
+	border:1px solid #dce5d1;
+	border-radius:7px;
+	overflow:hidden;
+	max-width:100%
+}
+
+.diagram-figure.ProseMirror-selectednode {
+	outline:3px solid #a1b99c
+}
+
+.diagram-viewport {
+	overflow-x:auto;
+	background:#fff
+}
+
+.diagram-viewport iframe {
+	display:block;
+	border:0;
+	max-width:none
+}
+
+.diagram-operations,.diagram-edit-actions {
+	display:flex;
+	gap:8px;
+	flex-wrap:wrap
+}
+
+.diagram-operations {
+	padding:8px 12px;
+	background:#f0f5e9
+}
+
+.diagram-operations button {
+	background:transparent;
+	color:#607552;
+	font-size:11px;
+	padding:4px 7px;
+	border-radius:4px
+}
+
+.diagram-operations button:hover {
+	background:#e0ead5
+}
+
+.diagram-controls {
+	padding:15px 18px;
+	background:#f7faf3;
+	font-size:12px
+}
+
+.diagram-controls label {
+	display:block;
+	color:#607552;
+	margin-bottom:12px
+}
+
+.diagram-controls input,.diagram-controls textarea,.diagram-controls select,.diagram-orphan-draft textarea {
+	display:block;
+	width:100%;
+	margin-top:5px;
+	padding:8px;
+	border:1px solid #cad8bc;
+	border-radius:4px;
+	background:#fff;
+	font:inherit;
+	color:#28362f
+}
+
+.diagram-controls textarea,.diagram-orphan-draft textarea {
+	resize:vertical
+}
+
+.diagram-selectors {
+	display:flex;
+	gap:12px
+}
+
+.diagram-selectors label {
+	flex:1;
+	min-width:0
+}
+
+.diagram-draft-notice,.diagram-orphan-draft {
+	background:#fff3df;
+	border:1px solid #ead9b9;
+	color:#927443;
+	font-size:12px;
+	padding:12px 15px;
+	border-radius:6px;
+	margin:12px 0
+}
+
+.diagram-orphan-draft button {
+	margin-top:10px
 }
 
 .empty-state {
