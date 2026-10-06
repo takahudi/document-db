@@ -19,14 +19,16 @@ const html = z.string().describe('部品だけの本文 HTML。画像は asset:U
 server.registerTool('list_documents', { description: '文書の ID とタイトルを一覧します。' }, () => result(() => documents.list()))
 server.registerTool('get_document', { description: '最新の版と本文 HTML を取得します。', inputSchema: { id } }, input => result(() => {
 	const doc = documents.read(input.id)
-	return { id: doc.id, title: doc.title, revision: doc.revision, html: doc.html }
+	return { id: doc.id, title: doc.title, revision: doc.revision, html: doc.html, diagrams: doc.diagrams }
 }))
-server.registerTool('create_document', { description: 'タイトルと本文 HTML から文書を作成します。', inputSchema: { title, html } }, input => result(() => {
-	const doc = documents.create({ title: input.title, body: { kind: 'html', value: input.html } })
+server.registerTool('get_diagram', { description: '文書の最新版から図のSVG、CSS、ラベルの対応情報を取得します。', inputSchema: { id, diagramId: id } }, input => result(() => documents.readDiagram(input.id, input.diagramId)))
+const diagrams = z.array(z.unknown()).max(100).optional().describe('新規または変更する図の定義。既存の参照を保持する更新では省略できます。')
+server.registerTool('create_document', { description: 'タイトルと本文 HTML から文書を作成します。', inputSchema: { title, html, diagrams } }, input => result(() => {
+	const doc = documents.create({ title: input.title, body: { kind: 'html', value: input.html, diagrams: input.diagrams } })
 	return { id: doc.id, revision: doc.revision }
 }))
-server.registerTool('update_document', { description: '取得時の版が一致する場合だけ文書全体を保存します。', inputSchema: { id, revision: z.number().int().positive(), title, html } }, input => result(() => {
-	const doc = documents.update({ id: input.id, expectedRevision: input.revision, title: input.title, body: { kind: 'html', value: input.html } })
+server.registerTool('update_document', { description: '取得時の版が一致する場合だけ文書全体を保存します。', inputSchema: { id, revision: z.number().int().positive(), title, html, diagrams } }, input => result(() => {
+	const doc = documents.update({ id: input.id, expectedRevision: input.revision, title: input.title, body: { kind: 'html', value: input.html, diagrams: input.diagrams } })
 	return { revision: doc.revision }
 }))
 await server.connect(new StdioServerTransport())

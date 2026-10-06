@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { openDocuments, DocumentError, ContentError } from './documents.js'
 import { dataDirectory, projectDir, serverPort } from './config.js'
+import { diagramFontCss, readDiagramFont } from './diagram-font-assets.js'
 
 const documents = openDocuments({ dataDir: dataDirectory() })
 const app = express()
@@ -46,6 +47,11 @@ app.post('/api/assets', express.raw({ type: ['image/png', 'image/jpeg', 'image/w
 app.get('/api/assets/:id', (req, res) => {
 	const asset = documents.assets.read(req.params.id)
 	res.type(asset.mime).set('Cache-Control', 'private, max-age=31536000, immutable').send(asset.bytes)
+})
+app.get('/diagram-fonts.css', (_req, res) => { res.type('css').send(diagramFontCss) })
+app.get('/diagram-fonts/:family/:file', (req, res) => {
+	const font = readDiagramFont(req.params.family, req.params.file)
+	res.type(font.mime).set('Cache-Control', 'private, max-age=86400').send(font.bytes)
 })
 app.use('/api', (_req, res) => { res.status(404).json({ kind: 'not-found', message: '操作が見つかりません。' }) })
 if (process.argv.includes('--dev')) {

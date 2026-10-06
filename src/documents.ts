@@ -4,15 +4,16 @@ import { isAbsolute, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { openAssets } from './assets.js'
-import { assetRefs, ContentError, validateBody, type BodyNode } from './content/parts.js'
+import { assetRefs, diagramsOf, ContentError, validateBody, type BodyNode } from './content/parts.js'
 import { parseHtml, serializeHtml } from './content/html.js'
+import { parseDiagram, diagramSummary, type Diagram } from './content/diagram.js'
 
 const idSchema = z.string().uuid()
 const revisionSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER - 1)
 const titleSchema = z.string().trim().min(1, 'タイトルを入力してください。').max(200)
-export type BodyInput = { kind: 'html'; value: string } | { kind: 'editor'; value: unknown }
+export type BodyInput = { kind: 'html'; value: string; diagrams?: unknown[] } | { kind: 'editor'; value: unknown }
 export type Draft = { title: string; body: BodyInput }
-export type Snapshot = { id: string; revision: number; title: string; body: BodyNode; html: string; canRestore: boolean }
+export type Snapshot = { id: string; revision: number; title: string; body: BodyNode; html: string; diagrams: ReturnType<typeof diagramSummary>[]; canRestore: boolean }
 export class DocumentError extends Error {
 	constructor(readonly kind: 'not-found' | 'conflict' | 'nothing-to-restore' | 'busy' | 'storage', message: string, readonly currentRevision?: number) { super(message) }
 }
@@ -38,11 +39,23 @@ export function openDocuments({ dataDir }: { dataDir: string }) {
 	}
 	function snapshot(value: z.infer<typeof rowSchema>): Snapshot {
 		const body = validateBody(JSON.parse(value.body_json))
-		return { id: value.id, revision: value.revision, title: value.title, body, html: serializeHtml(body), canRestore: value.previous_json !== null }
+		return { id: value.id, revision: value.revision, title: value.title, body, html: serializeHtml(body), diagrams: diagramsOf(body).map(diagramSummary), canRestore: value.previous_json !== null }
 	}
-	function content(draft: Draft) {
+	function content(draft: Draft, current?: BodyNode) {
 		const title = titleSchema.parse(draft.title)
-		const body = draft.body.kind === 'html' ? parseHtml(draft.body.value) : validateBody(draft.body.value)
+		let body: BodyNode
+		if (draft.body.kind === 'html') {
+			const supplied = (draft.body.diagrams ?? []).map(parseDiagram)
+			const definitions = new Map<string, Diagram>(current ? diagramsOf(current).map(diagram => [diagram.id, diagram]) : [])
+			const suppliedIds = new Set<string>()
+			for (const diagram of supplied) {
+				if (suppliedIds.has(diagram.id)) throw new ContentError('図の定義が重複しています。')
+				suppliedIds.add(diagram.id); definitions.set(diagram.id, diagram)
+			}
+			body = parseHtml(draft.body.value, [...definitions.values()])
+			const used = new Set(diagramsOf(body).map(diagram => diagram.id.toString()))
+			if ([...suppliedIds].some(id => !used.has(id))) throw new ContentError('本文から参照されない図の定義があります。')
+		} else body = validateBody(draft.body.value)
 		return { title, body }
 	}
 	function transaction<T>(work: () => T): T {
@@ -59,6 +72,12 @@ export function openDocuments({ dataDir }: { dataDir: string }) {
 		assets,
 		list() { return z.array(z.object({ id: idSchema, title: z.string() })).parse(db.prepare('SELECT id,title FROM documents ORDER BY rowid DESC').all()) },
 		read(id: string) { return snapshot(row(id)) },
+		readDiagram(id: string, diagramId: string) {
+			const doc = snapshot(row(id))
+			const diagram = diagramsOf(doc.body).find(definition => definition.id === diagramId)
+			if (!diagram) throw new DocumentError('not-found', '図が見つかりません。')
+			return { id: doc.id, revision: doc.revision, diagram }
+		},
 		create(draft: Draft) {
 			const { title, body } = content(draft)
 			return transaction(() => {
@@ -70,10 +89,10 @@ export function openDocuments({ dataDir }: { dataDir: string }) {
 		},
 		update(input: Draft & { id: string; expectedRevision: number }) {
 			revisionSchema.parse(input.expectedRevision)
-			const { title, body } = content(input)
 			return transaction(() => {
 				const current = row(input.id)
 				if (current.revision !== input.expectedRevision) throw new DocumentError('conflict', '文書が更新されています。最新の文書を読み直してください。', current.revision)
+				const { title, body } = content(input, validateBody(JSON.parse(current.body_json)))
 				checkImages(body)
 				const previous = JSON.stringify({ title: current.title, body: JSON.parse(current.body_json) })
 				db.prepare('UPDATE documents SET title=?,body_json=?,previous_json=?,revision=revision+1 WHERE id=?').run(title, JSON.stringify(body), previous, input.id)

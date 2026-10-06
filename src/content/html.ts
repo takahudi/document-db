@@ -1,6 +1,7 @@
 import { SAXParser, type StartTag, type SaxToken } from 'parse5-sax-parser'
 import { decodeHTML } from 'entities'
 import { assetIdSchema, ContentError, safeLink, validateBody, type BodyNode, type Mark } from './parts.js'
+import type { Diagram } from './diagram.js'
 
 const nodes: Record<string, BodyNode['type']> = { p: 'paragraph', h1: 'heading', h2: 'heading', h3: 'heading', ul: 'bulletList', ol: 'orderedList', li: 'listItem', table: 'table', tr: 'tableRow', td: 'tableCell', th: 'tableHeader', pre: 'codeBlock', img: 'image', br: 'hardBreak' }
 const parents: Record<string, readonly string[]> = {
@@ -9,13 +10,16 @@ const parents: Record<string, readonly string[]> = {
 	table: ['doc'], tbody: ['table'], thead: ['table'], tr: ['table', 'tbody', 'thead'], td: ['tr'], th: ['tr'],
 	pre: ['doc'], code: ['pre'], img: ['doc'], br: ['p', 'h1', 'h2', 'h3', 'strong', 'em', 'a'],
 	strong: ['p', 'h1', 'h2', 'h3', 'em', 'a'], em: ['p', 'h1', 'h2', 'h3', 'strong', 'a'], a: ['p', 'h1', 'h2', 'h3', 'strong', 'em'],
+	figure: ['doc'], figcaption: ['figure'],
 }
-type Frame = { tag: string; node?: BodyNode; mark?: Mark; hasCode?: boolean }
-export function parseHtml(html: string): BodyNode {
+type Frame = { tag: string; node?: BodyNode; mark?: Mark; hasCode?: boolean; hasCaption?: boolean }
+export function parseHtml(html: string, definitions: readonly Diagram[] = []): BodyNode {
 	if (html.includes('\0') || html.length > 2_000_000) throw new ContentError('本文 HTML が不正または大きすぎます。')
 	const body: BodyNode = { type: 'doc', content: [] }
 	const stack: Frame[] = [{ tag: 'doc', node: body }]
 	let consumed = 0
+	const diagrams = new Map(definitions.map(definition => [definition.id.toString(), definition]))
+	if (diagrams.size !== definitions.length) throw new ContentError('図の定義が重複しています。')
 	function source(token: SaxToken): string {
 		const location = token.sourceCodeLocation
 		if (!location || location.startOffset !== consumed) throw new ContentError('HTML に未対応の構文があります。')
@@ -46,7 +50,7 @@ export function parseHtml(html: string): BodyNode {
 			names.add(name)
 			rest = rest.slice(attr[0].length)
 		}
-		const allowed = token.tagName === 'a' ? ['href'] : token.tagName === 'img' ? ['src', 'alt'] : []
+		const allowed = token.tagName === 'a' ? ['href'] : token.tagName === 'img' ? ['src', 'alt'] : token.tagName === 'figure' ? ['data-diagram-id'] : []
 		if (names.size !== token.attrs.length || token.attrs.some(attr => !allowed.includes(attr.name) || attr.namespace || attr.prefix)) throw new ContentError('未対応の HTML 属性です。')
 		return Object.fromEntries(token.attrs.map(attr => [attr.name, attr.value]))
 	}
@@ -58,7 +62,15 @@ export function parseHtml(html: string): BodyNode {
 		if (token.selfClosing && !['img', 'br'].includes(token.tagName)) throw new ContentError('終了タグが必要です。')
 		const attr = attrs(token, raw)
 		const frame: Frame = { tag: token.tagName }
-		if (token.tagName === 'strong') frame.mark = { type: 'bold' }
+		if (token.tagName === 'figure') {
+			const definition = diagrams.get(attr['data-diagram-id'] ?? '')
+			if (!definition) throw new ContentError('図の参照を解決できません。新しい図には定義が必要です。')
+			const node: BodyNode = { type: 'diagram', attrs: { definition: { ...definition, description: '' } } }
+			append(node); frame.node = node
+		} else if (token.tagName === 'figcaption') {
+			if (parent.hasCaption) throw new ContentError('図の説明文が重複しています。')
+			parent.hasCaption = true
+		} else if (token.tagName === 'strong') frame.mark = { type: 'bold' }
 		else if (token.tagName === 'em') frame.mark = { type: 'italic' }
 		else if (token.tagName === 'a') frame.mark = { type: 'link', attrs: { href: safeLink(attr.href ?? '') } }
 		else if (token.tagName === 'code') parent.hasCode = true
@@ -82,12 +94,20 @@ export function parseHtml(html: string): BodyNode {
 		const raw = source(token)
 		if (!/^<\/[A-Za-z][A-Za-z0-9]*\s*>$/.test(raw) || current().tag !== token.tagName || stack.length === 1) throw new ContentError('終了タグが一致しません。')
 		if (token.tagName === 'pre' && !current().hasCode) throw new ContentError('コードは pre > code が必要です。')
+		if (token.tagName === 'figure' && !current().hasCaption) throw new ContentError('図には figcaption の説明文が必要です。')
 		stack.pop()
 	})
 	parser.on('text', token => {
 		const raw = source(token)
 		if (raw.includes('<')) throw new ContentError('文字としての < はエスケープしてください。')
 		const parent = current()
+		if (parent.tag === 'figcaption') {
+			const figure = stack.findLast(frame => frame.tag === 'figure')?.node
+			const definition = figure?.attrs?.definition
+			if (!definition || typeof definition !== 'object' || Array.isArray(definition)) throw new ContentError('図の説明文の場所が不正です。')
+			definition.description += token.text
+			return
+		}
 		if (parent.tag !== 'code' && !['p', 'h1', 'h2', 'h3', 'strong', 'em', 'a'].includes(parent.tag)) {
 			if (token.text.trim()) throw new ContentError('文字列は段落などの内部に置いてください。')
 			return
@@ -118,6 +138,11 @@ export function serializeHtml(body: BodyNode): string {
 			return result
 		}
 		if (node.type === 'image') return `<img src="asset:${escapeAttr(String(node.attrs?.assetId))}" alt="${escapeAttr(String(node.attrs?.alt ?? ''))}">`
+		if (node.type === 'diagram') {
+			const definition = node.attrs?.definition
+			if (!definition || typeof definition !== 'object' || Array.isArray(definition)) throw new ContentError('図の定義がありません。')
+			return `<figure data-diagram-id="${escapeAttr(definition.id)}"><figcaption>${escapeText(definition.description)}</figcaption></figure>`
+		}
 		if (node.type === 'codeBlock') return `<pre><code>${content}</code></pre>`
 		if (node.type === 'table') return `<table><tbody>${content}</tbody></table>`
 		if (node.type === 'heading') return `<h${String(node.attrs?.level)}>${content}</h${String(node.attrs?.level)}>`

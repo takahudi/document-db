@@ -4,6 +4,9 @@ import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table
 import { ListItem } from '@tiptap/extension-list'
 import Link from '@tiptap/extension-link'
 import { z } from 'zod'
+import { diagramSchema, parseDiagram, type Diagram } from './diagram.js'
+import { ContentError } from './errors.js'
+export { ContentError } from './errors.js'
 
 export const assetIdSchema = z.string().uuid()
 const image = Node.create({
@@ -12,20 +15,29 @@ const image = Node.create({
 	parseHTML: () => [{ tag: 'img[data-asset-id]' }],
 	renderHTML: ({ node }) => ['img', { src: `/api/assets/${String(node.attrs.assetId)}`, alt: String(node.attrs.alt), 'data-asset-id': String(node.attrs.assetId) }],
 })
+const diagram = Node.create({
+	name: 'diagram', group: 'block', atom: true, draggable: true,
+	addAttributes: () => ({ definition: { default: null } }),
+	parseHTML: () => [],
+	renderHTML: ({ node }) => {
+		const definition = parseDiagram(node.attrs.definition)
+		return ['figure', { 'data-diagram-id': definition.id }, ['figcaption', definition.description]]
+	},
+})
 export const extensions = [
 	StarterKit.configure({ heading: { levels: [1, 2, 3] }, listItem: false, blockquote: false, horizontalRule: false, strike: false, code: false, link: false, underline: false, trailingNode: false }),
 	ListItem.extend({ content: 'paragraph (paragraph | bulletList | orderedList)*' }),
 	Link.configure({ openOnClick: false, protocols: ['http', 'https'], HTMLAttributes: { target: null, rel: null } }),
-	Table.configure({ resizable: false }), TableRow, TableHeader.extend({ content: 'paragraph+' }), TableCell.extend({ content: 'paragraph+' }), image,
+	Table.configure({ resizable: false }), TableRow, TableHeader.extend({ content: 'paragraph+' }), TableCell.extend({ content: 'paragraph+' }), image, diagram,
 ]
-const types = ['doc', 'paragraph', 'heading', 'bulletList', 'orderedList', 'listItem', 'table', 'tableRow', 'tableCell', 'tableHeader', 'codeBlock', 'image', 'text', 'hardBreak'] as const
+const types = ['doc', 'paragraph', 'heading', 'bulletList', 'orderedList', 'listItem', 'table', 'tableRow', 'tableCell', 'tableHeader', 'codeBlock', 'image', 'diagram', 'text', 'hardBreak'] as const
 const markSchema = z.discriminatedUnion('type', [
 	z.object({ type: z.literal('bold') }).strict(),
 	z.object({ type: z.literal('italic') }).strict(),
 	z.object({ type: z.literal('link'), attrs: z.object({ href: z.string(), target: z.null().optional(), rel: z.null().optional(), class: z.null().optional(), title: z.null().optional() }).strict() }).strict(),
 ])
 export type Mark = z.infer<typeof markSchema>
-type Attribute = string | number | null | number[]
+type Attribute = string | number | null | number[] | Diagram
 export interface BodyNode {
 	type: typeof types[number]
 	attrs?: Record<string, Attribute>
@@ -34,7 +46,7 @@ export interface BodyNode {
 	marks?: Mark[]
 }
 const nodeSchema: z.ZodType<BodyNode> = z.lazy(() => z.object({
-	type: z.enum(types), attrs: z.record(z.string(), z.union([z.string(), z.number(), z.null(), z.array(z.number())])).optional(),
+	type: z.enum(types), attrs: z.record(z.string(), z.union([z.string(), z.number(), z.null(), z.array(z.number()), diagramSchema])).optional(),
 	content: z.array(nodeSchema).optional(), text: z.string().optional(), marks: z.array(markSchema).optional(),
 }).strict())
 const attributes: Partial<Record<BodyNode['type'], z.ZodType<Record<string, Attribute>>>> = {
@@ -44,9 +56,7 @@ const attributes: Partial<Record<BodyNode['type'], z.ZodType<Record<string, Attr
 	tableCell: z.object({ colspan: z.literal(1).default(1), rowspan: z.literal(1).default(1), colwidth: z.null().default(null), align: z.null().default(null) }).strict(),
 	tableHeader: z.object({ colspan: z.literal(1).default(1), rowspan: z.literal(1).default(1), colwidth: z.null().default(null), align: z.null().default(null) }).strict(),
 	image: z.object({ assetId: assetIdSchema, alt: z.string() }).strict(),
-}
-export class ContentError extends Error {
-	readonly kind = 'invalid'
+	diagram: z.object({ definition: diagramSchema }).strict(),
 }
 export function safeLink(value: string): string {
 	let url: URL
@@ -58,6 +68,7 @@ export function validateBody(raw: unknown): BodyNode {
 	const result = nodeSchema.safeParse(raw)
 	if (!result.success) throw new ContentError(`未対応の本文です。${result.error.issues[0]?.message ?? ''}`)
 	const body = result.data
+	const diagramIds = new Set<string>()
 	if (body.type !== 'doc') throw new ContentError('本文のルートは doc が必要です。')
 	function visit(node: BodyNode, parent: BodyNode | undefined) {
 		const schema = attributes[node.type] ?? z.object({}).strict()
@@ -67,7 +78,12 @@ export function validateBody(raw: unknown): BodyNode {
 		else delete node.attrs
 		if (node.type !== 'text' && node.text !== undefined) throw new ContentError('文字列の場所が不正です。')
 		if (node.marks?.length && node.type !== 'text' && node.type !== 'hardBreak') throw new ContentError('装飾の場所が不正です。')
-		if (['text', 'image', 'hardBreak'].includes(node.type) && node.content !== undefined) throw new ContentError('この部品は子要素を持てません。')
+		if (['text', 'image', 'diagram', 'hardBreak'].includes(node.type) && node.content !== undefined) throw new ContentError('この部品は子要素を持てません。')
+		if (node.type === 'diagram') {
+			const definition = parseDiagram(node.attrs?.definition)
+			if (diagramIds.has(definition.id)) throw new ContentError('図の識別子が重複しています。複製には新しい識別子が必要です。')
+			diagramIds.add(definition.id)
+		}
 		if (node.type === 'text' && parent?.type !== 'codeBlock') node.text = node.text?.replace(/[\t\n\r ]+/g, ' ')
 		if (parent?.type === 'codeBlock' && (node.type !== 'text' || node.marks?.length)) throw new ContentError('コードブロックに装飾は使えません。')
 		if (node.marks) {
@@ -98,4 +114,13 @@ export function assetRefs(body: BodyNode): string[] {
 	}
 	visit(body)
 	return [...refs]
+}
+export function diagramsOf(body: BodyNode): Diagram[] {
+	const diagrams: Diagram[] = []
+	function visit(node: BodyNode) {
+		if (node.type === 'diagram') diagrams.push(parseDiagram(node.attrs?.definition))
+		for (const child of node.content ?? []) visit(child)
+	}
+	visit(body)
+	return diagrams
 }
