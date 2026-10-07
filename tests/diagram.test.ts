@@ -15,6 +15,17 @@ function fixture() {
 	}
 }
 
+test('accessible Diagram Design figures retain their image role and local title references', () => {
+	const raw = fixture()
+	raw.svg = raw.svg.replace('<svg ', '<svg role="img" aria-labelledby="figure-title figure-desc" ').replace('<defs>', '<title id="figure-title">構成図</title><desc id="figure-desc">サービスの関係</desc><defs>')
+	const parsed = parseDiagram(raw)
+	assert.match(parsed.svg, /role="img" aria-labelledby="figure-title figure-desc"/)
+	assert.match(parsed.svg, /<title id="figure-title">構成図<\/title>/)
+	assert.throws(() => parseDiagram({ ...raw, svg: raw.svg.replace('figure-title figure-desc', 'missing') }), /参照先/)
+	assert.throws(() => parseDiagram({ ...raw, svg: raw.svg.replace('figure-title figure-desc', 'https://example.test/title') }), /読み上げ/)
+	assert.throws(() => parseDiagram({ ...raw, svg: raw.svg.replace('role="img"', 'role="button"') }), /role/)
+})
+
 test('canonical source owns current text, explicit newlines and duplicate label identity', () => {
 	const diagram = parseDiagram(fixture())
 	assert.equal(slotText(diagram, 'a', 'name'), '同じ文字日本語\nnext')

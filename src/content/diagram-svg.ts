@@ -8,7 +8,7 @@ const namespace = 'http://www.w3.org/2000/svg'
 const idPattern = /^[A-Za-z_][A-Za-z0-9_.:-]*$/
 const shared = new Set(['id', 'class', 'style', 'transform', 'xml:space', ...presentationProperties])
 const attributes: Readonly<Record<string, readonly string[]>> = {
-	svg: ['xmlns', 'xmlns:xlink', 'viewBox', 'width', 'height', 'preserveAspectRatio'], g: [], defs: [], title: [], desc: [],
+	svg: ['xmlns', 'xmlns:xlink', 'viewBox', 'width', 'height', 'preserveAspectRatio', 'role', 'aria-labelledby'], g: [], defs: [], title: [], desc: [],
 	path: ['d', 'pathLength'], rect: ['x', 'y', 'width', 'height', 'rx', 'ry', 'pathLength'],
 	circle: ['cx', 'cy', 'r', 'pathLength'], ellipse: ['cx', 'cy', 'rx', 'ry', 'pathLength'],
 	line: ['x1', 'y1', 'x2', 'y2', 'pathLength'], polyline: ['points', 'pathLength'], polygon: ['points', 'pathLength'],
@@ -76,6 +76,12 @@ function validateAttribute(element: SvgElement, name: string, value: string, ref
 	if (name === 'class' && value.split(/\s+/).some(item => item && !idPattern.test(item))) invalid('クラス名が不正です。')
 	if (name === 'xmlns' && value !== namespace) invalid('名前空間が不正です。')
 	if (name === 'xmlns:xlink' && value !== 'http://www.w3.org/1999/xlink') invalid('参照の名前空間が不正です。')
+	if (name === 'role' && value !== 'img') invalid('図の role は img に限ります。')
+	if (name === 'aria-labelledby') {
+		const ids = value.trim().split(/\s+/)
+		if (ids.some(id => !idPattern.test(id))) invalid('読み上げ用の参照は図内の ID が必要です。')
+		refs.push(...ids)
+	}
 	if (name === 'xml:space' && value !== 'preserve') invalid('文字の空白は preserve が必要です。')
 	if (name === 'style') return Object.entries(parseInlineStyle(value, refs)).map(([key, entry]) => `${key}:${entry}`).join(';')
 	if (presentationProperties.has(name)) return validatePresentation(name, value, refs)

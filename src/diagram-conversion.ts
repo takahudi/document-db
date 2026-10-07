@@ -186,7 +186,7 @@ export async function convertGeneratedDiagram(input: { html: string; manifest: u
 					if (box.width === 0 && box.height === 0) continue
 					let stroke = 0
 					for (const text of group.querySelectorAll('text')) { const style = view.getComputedStyle(text); if (style.stroke !== 'none') stroke = Math.max(stroke, Number.parseFloat(style.strokeWidth) / 2) }
-					if (box.x - stroke < region.x - 0.25 || box.y - stroke < region.y - 0.25 || box.x + box.width + stroke > region.x + region.width + 0.25 || box.y + box.height + stroke > region.y + region.height + 0.25) throw new Error(`図内の文字 ${label.id}/${slot.id} が宣言領域からあふれています。`)
+					if (box.x - stroke < region.x - 0.25 || box.y - stroke < region.y - 0.25 || box.x + box.width + stroke > region.x + region.width + 0.25 || box.y + box.height + stroke > region.y + region.height + 0.25) throw new Error(`図内の文字 ${label.id}/${slot.id} が宣言領域からあふれています。実測 x=${box.x}, y=${box.y}, width=${box.width}, height=${box.height}。領域 x=${region.x}, y=${region.y}, width=${region.width}, height=${region.height}。`)
 				}
 			}
 		}, diagrams)
