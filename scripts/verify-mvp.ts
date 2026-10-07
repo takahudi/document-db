@@ -35,7 +35,7 @@ async function stopHttp() { if (http && http.exitCode === null) { const exited =
 const client = new Client({ name: 'mvp-verification', version: '1.0.0' })
 const transport = new StdioClientTransport({ command: process.execPath, args: ['--import', pathToFileURL(join(projectDir, 'node_modules/tsx/dist/loader.mjs')).href, join(projectDir, 'src/mcp.ts'), '--data-dir', dataDir], cwd: tmpdir(), stderr: 'pipe' })
 transport.stderr?.on('data', chunk => { process.stderr.write(chunk) })
-const docSchema = z.object({ id: z.string().uuid(), revision: z.number(), title: z.string(), html: z.string() })
+const docSchema = z.object({ id: z.string().uuid(), revision: z.number(), title: z.string(), html: z.string(), diagrams: z.array(z.unknown()).length(0) })
 const savedSchema = z.object({ id: z.string().uuid(), revision: z.number() })
 async function tool(name: string, args: Record<string, unknown> = {}, expectError = false): Promise<unknown> {
 	const reply = await client.callTool({ name, arguments: args })
@@ -52,7 +52,7 @@ page.on('pageerror', error => { pageErrors.push(error.message); process.stderr.w
 try {
 	let base = await launchHttp()
 	await client.connect(transport)
-	assert.equal((await client.listTools()).tools.length, 4)
+	assert.deepEqual((await client.listTools()).tools.map(tool => tool.name).sort(), ['create_document', 'get_diagram', 'get_document', 'list_documents', 'update_document'])
 	await page.goto(base)
 	await page.getByRole('heading', { name: '考えを、文書に。' }).waitFor()
 	await page.screenshot({ path: join(artifacts, 'empty.png'), fullPage: true })

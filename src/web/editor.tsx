@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { EditorContent, useEditor, type Editor } from '@tiptap/react'
-import { extensions, validateBody, safeLink } from '../content/parts.js'
+import { validateBody, safeLink } from '../content/parts.js'
 import type { BodyNode } from '../content/parts.js'
 import { api } from './api.js'
-import type { Session } from './state.js'
+import type { Session, DiagramDraft } from './state.js'
+import { browserExtensions, DiagramSessionProvider } from './diagram.js'
 
 function Tool({ label, active = false, disabled = false, onClick, children }: { label: string; active?: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
 	return <button type="button" className={active ? 'tool active' : 'tool'} aria-label={label} title={label} aria-pressed={active} disabled={disabled} onMouseDown={event => event.preventDefault()} onClick={onClick}>{children}</button>
@@ -48,23 +49,21 @@ function Toolbar({ editor, disabled, chooseImage }: { editor: Editor; disabled: 
 		</div>}
 	</div>
 }
-export function DocumentEditor({ session, disabled, onChange }: { session: Session; disabled: boolean; onChange: (body: BodyNode) => void }) {
+export function DocumentEditor({ session, disabled, onChange, onDiagramDraft, onDiscardDiagramDraft }: { session: Session; disabled: boolean; onChange: (body: BodyNode) => void; onDiagramDraft: (draft: DiagramDraft) => void; onDiscardDiagramDraft: (key: string) => void }) {
 	const fileInput = useRef<HTMLInputElement>(null)
 	const [upload, setUpload] = useState<{ kind: 'idle' } | { kind: 'uploading' } | { kind: 'failed'; message: string }>({ kind: 'idle' })
 	const [selectedImage, selectImage] = useState<{ assetId: string; alt: string } | null>(null)
-	const editor = useEditor({ extensions, content: session.body, editorProps: { attributes: { 'aria-label': '文書の本文', role: 'textbox', 'aria-multiline': 'true' } },
+	const editor = useEditor({ extensions: browserExtensions, content: session.body, editorProps: { attributes: { 'aria-label': '文書の本文', role: 'textbox', 'aria-multiline': 'true' } },
 		onUpdate: ({ editor: instance }) => { onChange(validateBody(instance.getJSON())) },
 		onSelectionUpdate: ({ editor: instance }) => {
 			const attrs = instance.isActive('image') ? instance.getAttributes('image') : null
 			selectImage(attrs ? { assetId: String(attrs.assetId), alt: String(attrs.alt) } : null)
 		},
 	})
-	const baselineKey = session.baseline ? `${session.baseline.id}:${session.baseline.revision}` : 'new'
-	useEffect(() => { if (editor) { editor.commands.setContent(session.body, { emitUpdate: false }); selectImage(null) } }, [editor, baselineKey])
 	useEffect(() => { editor?.setEditable(!disabled && upload.kind !== 'uploading', false) }, [editor, disabled, upload.kind])
 	if (!editor) return null
 	const locked = disabled || upload.kind === 'uploading'
-	return <>
+	return <DiagramSessionProvider value={{ drafts: session.diagramDrafts, disabled: locked, onDraft: onDiagramDraft, onDiscard: onDiscardDiagramDraft }}>
 		<Toolbar editor={editor} disabled={locked} chooseImage={() => fileInput.current?.click()} />
 		<input ref={fileInput} type="file" aria-label="画像ファイル" accept="image/png,image/jpeg,image/webp" hidden onChange={async event => {
 			const file = event.currentTarget.files?.[0]
@@ -84,5 +83,5 @@ export function DocumentEditor({ session, disabled, onChange }: { session: Sessi
 			editor.commands.updateAttributes('image', { alt }); selectImage({ ...selectedImage, alt })
 		}} /><p>AI にはこの説明文と画像の参照を渡します。</p></div>}
 		<EditorContent editor={editor} className="editor-paper" />
-	</>
+	</DiagramSessionProvider>
 }

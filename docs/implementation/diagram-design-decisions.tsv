@@ -1,0 +1,14 @@
+ts	phase	decision	why	evidence	result
+2026-10-06T00:00:00+09:00	frame	先に保存と編集の契約を設計し実ブラウザとMCPで検証する	図の追加が本文codecと人間のドラフト管理を横断するため	docs/specs/diagram-design-integration.md	open
+2026-10-06T14:44:59Z	audit	初回行の00:00は仮置きの時刻で開始時刻の証拠として扱わない	記録を作成した際に実時刻を取得していなかったため	docs/implementation/diagram-design-decisions.tsv:2	superseded timestamp
+2026-10-06T14:44:59Z	design	検査済みSVGと文字の対応情報を一つの図部品として保存する	大きなscene graphを公開せず静的な図の見た目と最新文字を保持するため	docs/implementation/diagram-design.md	independent scores SVG15 AST13
+2026-10-06T14:44:59Z	storage	既存図の参照解決を版確認後のトランザクション内で行う	読み取りと保存の間に別の更新が入っても古い図を混ぜないため	tests/diagram-documents.test.ts	passed
+2026-10-06T14:44:59Z	ui	競合後の無効状態をセッションの編集可能状態だけで決める	Tiptapの更新順序で図の操作が無効のまま残る実不具合を再現したため	scripts/verify-diagrams.ts	browser regression passed
+2026-10-06T14:44:59Z	fonts	日本語にはNoto Sans JPを必須とし書体をローカル配信する	読み込み成功だけではシステム書体への代替を防げないことを実Edgeで確認したため	tests/diagram.test.ts	passed; rendered-font probe added
+2026-10-06T14:44:59Z	conversion	通常書体も明示的に保存し異なる親の行とCSS変形を拒否する	独立レビューで文字の斜体化と座標のずれを実変換で再現したため	tests/diagram-conversion.test.ts	focused14 tests passed; empty-label regression added
+2026-10-06T14:44:59Z	verification	変換グラフと回転文字とHTMLラベルをMCPと画面の往復へ追加する	直接SVGを保存する検証だけでは変換後の編集を証明できないため	scripts/verify-diagrams.ts	extended run pending
+2026-10-06T15:29:12Z	diagnosis	ロード停止の仮説をiframeとボタンの実状態で検査した	無効な別図のボタン選択とCDP観測後の通信停止をアプリの故障と混同しないため	scripts/verify-diagrams.ts	stable accessible name; CDP probe moved after all operations
+2026-10-06T15:29:12Z	ui	成功した読み直しは同じ版でも新しい編集器を作り初期contentの重複設定を削除した	確認した破棄を画面に反映しiframeの不要な再生成を避けるため	scripts/verify-diagrams.ts	browser same-revision reload passed
+2026-10-06T15:29:12Z	verification	全28テストと型とlintとbuildおよび既存MVPと拡張図の実操作を確認した	代理の判定ではなく実際の本文と図と日本語の描画書体を照合するため	verification-artifacts/diagrams/result.json	VERIFIED; 0 page errors and 0 external requests
+2026-10-06T15:33:08Z	audit	最終検証の実行コマンドと既存MVPの計測結果も記録する	図の結果だけでは全チェックの根拠を追えないという独立レビューを反映するため	docs/implementation/diagram-design.md; verification-artifacts/measurement.json	VERIFIED; session4 tests and both browser scenarios passed after UI lifecycle change
+2026-10-06T15:33:08Z	skill	連携スキルの形式とREADMEの変換コマンドを実行検証する	説明だけでなく実際の変換出力まで確認するため	.agents/skills/document-db-diagrams/SKILL.md; scripts/convert-diagram.ts	quick_validate passed; CLI generated one valid figure
